@@ -1,0 +1,264 @@
+/*
+ * FullCalendar v7 "breezy" theme, re-coloured with ESN tokens.
+ * Structural class names in v7 are hashed, so styling is done through the
+ * theme's CSS variables and our own classes passed via *Class options.
+ */
+.esn-calendar {
+  --fc-breezy-primary: var(--brand-blue);
+  --fc-breezy-primary-over: #3d41b0;
+  --fc-breezy-primary-foreground: #ffffff;
+  --fc-breezy-event: var(--brand-blue);
+  --fc-breezy-event-contrast: #ffffff;
+  --fc-breezy-highlight: color-mix(in oklab, var(--brand-cyan) 12%, transparent);
+  --fc-breezy-now: var(--brand-magenta);
+  --fc-breezy-background: var(--card);
+  --fc-breezy-foreground: var(--foreground);
+  --fc-breezy-strong-foreground: var(--foreground);
+  --fc-breezy-muted-foreground: var(--muted-foreground);
+  --fc-breezy-faint-foreground: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  --fc-breezy-border: color-mix(in oklab, var(--border) 80%, transparent);
+  --fc-breezy-muted-border: color-mix(in oklab, var(--border) 55%, transparent);
+  --fc-breezy-strong-border: var(--input);
+  --fc-breezy-faint: color-mix(in oklab, var(--brand-blue) 3%, transparent);
+  --fc-breezy-muted: color-mix(in oklab, var(--brand-blue) 6%, transparent);
+  --fc-breezy-strong: color-mix(in oklab, var(--brand-blue) 10%, transparent);
+  --fc-breezy-stronger: color-mix(in oklab, var(--brand-blue) 14%, transparent);
+  --fc-breezy-strongest: color-mix(in oklab, var(--brand-blue) 18%, transparent);
+  --fc-breezy-popover: var(--card);
+  --fc-breezy-popover-border: var(--border);
+  font-size: 0.875rem;
+}
+
+/* Month header: ESN brand gradient with soft "stars". */
+.esn-calendar-header {
+  background:
+    radial-gradient(circle at 85% -20%, rgb(255 255 255 / 0.28), transparent 45%),
+    radial-gradient(
+      circle at 10% 130%,
+      color-mix(in oklab, var(--brand-magenta) 70%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(120deg, var(--brand-blue) 0%, #3b3fb6 45%, var(--brand-cyan) 100%);
+}
+
+.esn-calendar-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.5) 1px, transparent 1.5px),
+    radial-gradient(circle, rgb(255 255 255 / 0.35) 1px, transparent 1.5px);
+  background-size:
+    46px 46px,
+    73px 73px;
+  background-position:
+    0 0,
+    20px 30px;
+  mask-image: linear-gradient(to left, black, transparent 70%);
+}
+
+/* Weekday header row */
+.esn-calendar .esn-day-header {
+  padding-block: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Day cells */
+.esn-calendar .esn-day {
+  transition: background-color 150ms ease;
+}
+.esn-calendar .esn-day:hover {
+  background-color: color-mix(in oklab, var(--brand-cyan) 6%, transparent);
+}
+.esn-calendar .esn-weekend {
+  background-color: color-mix(in oklab, var(--brand-blue) 3.5%, transparent);
+}
+.esn-calendar .esn-other-month {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 8px,
+    color-mix(in oklab, var(--muted-foreground) 6%, transparent) 8px 9px
+  );
+}
+.esn-calendar .esn-other-month .esn-day-number {
+  opacity: 0.45;
+}
+.esn-calendar .esn-past .esn-chip {
+  opacity: 0.7;
+}
+.esn-calendar .esn-selected-day {
+  background-color: color-mix(in oklab, var(--brand-cyan) 11%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--brand-cyan) 75%, transparent);
+}
+
+.esn-day-number {
+  display: inline-flex;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding-inline: 0.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.esn-today-number {
+  background: linear-gradient(135deg, var(--brand-magenta), #ff3d8b);
+  color: #ffffff;
+  box-shadow: 0 4px 12px -4px color-mix(in oklab, var(--brand-magenta) 70%, transparent);
+}
+
+/* Events: FullCalendar's own block is made invisible; our chip carries the look. */
+.esn-calendar .esn-event {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.esn-chip {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow: hidden;
+  border-radius: 0.55rem;
+  border-left: 3px solid var(--chip);
+  background: color-mix(in oklab, var(--chip) 13%, var(--card));
+  padding: 0.2rem 0.35rem 0.25rem;
+  color: var(--foreground);
+  text-align: left;
+  line-height: 1.3;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+.esn-chip:hover {
+  background: color-mix(in oklab, var(--chip) 20%, var(--card));
+  box-shadow: 0 6px 16px -8px color-mix(in oklab, var(--chip) 80%, transparent);
+  transform: translateY(-1px);
+}
+
+.esn-chip-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.esn-chip-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--chip);
+}
+
+.esn-chip-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--chip) 55%, var(--foreground));
+}
+
+.esn-chip-title {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Extra lines, like the planning sheet: "OC" (hosts) and "Notes". */
+.esn-chip-line,
+.esn-chip-note {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  white-space: normal;
+}
+.esn-chip-line svg,
+.esn-chip-note svg {
+  width: 0.7rem;
+  height: 0.7rem;
+  flex-shrink: 0;
+  margin-top: 0.12rem;
+}
+.esn-chip-line {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.esn-chip-line span,
+.esn-chip-note span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.esn-chip-note {
+  margin-top: 0.1rem;
+  border-radius: 0.35rem;
+  background: color-mix(in oklab, #f59e0b 14%, var(--card));
+  padding: 0.15rem 0.3rem;
+  color: color-mix(in oklab, #92400e 85%, var(--foreground));
+}
+.esn-chip-note span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: pre-line;
+}
+.dark .esn-chip-note {
+  color: #fde68a;
+}
+
+.esn-chip-tentative {
+  border-left-style: dashed;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    color-mix(in oklab, var(--chip) 10%, transparent) 6px 12px
+  );
+}
+.esn-chip-cancelled .esn-chip-title {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* Small screens: chips collapse to colour + icon so the month grid stays readable;
+   tapping an event opens the pop-up with all details and notes. */
+@media (max-width: 639px) {
+  .esn-calendar {
+    font-size: 0.75rem;
+  }
+  .esn-chip-time,
+  .esn-chip-title,
+  .esn-chip-line,
+  .esn-chip-note {
+    display: none;
+  }
+  .esn-chip {
+    align-items: center;
+    border-left-width: 0;
+    background: var(--chip);
+    padding-block: 0.15rem;
+  }
+  .esn-chip-icon {
+    margin-top: 0;
+    color: #ffffff;
+  }
+  .esn-day-number {
+    min-width: 1.5rem;
+    height: 1.5rem;
+  }
+}

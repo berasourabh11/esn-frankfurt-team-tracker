@@ -1,0 +1,36 @@
+{
+  "name": "esn-frankfurt-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev-server.ts",
+    "start": "tsx src/dev-server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:seed:generate": "tsx --tsconfig ../tsconfig.json scripts/generate-seed.ts",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "user:create": "tsx scripts/create-user.ts",
+    "cf:login": "wrangler login",
+    "cf:db:create": "wrangler d1 create esn-frankfurt",
+    "cf:db:migrate": "wrangler d1 migrations apply esn-frankfurt --remote",
+    "cf:db:seed-events": "wrangler d1 execute esn-frankfurt --remote --yes --file seed/events.sql",
+    "cf:db:seed-demo": "wrangler d1 execute esn-frankfurt --remote --yes --file seed/demo.sql",
+    "cf:deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.11",
+    "hono": "^4.13.19"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261121.1",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.166.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

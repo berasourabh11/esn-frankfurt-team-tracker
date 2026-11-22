@@ -1,0 +1,31 @@
+// The website (Next.js) as a Cloudflare Worker, built with the OpenNext adapter.
+// The API is a separate Worker in backend/ (backend/wrangler.jsonc).
+// Deploy both with: npm run deploy (see "Deployment" in README.md).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "esn-frankfurt-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "services": [
+    {
+      // Self-reference used by the adapter; must match "name".
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "esn-frankfurt-web",
+    },
+  ],
+  "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "esnfrankfurt.teamtracker.sourabh-bera.dev", "custom_domain": true },
+    // Earlier address, kept so existing links keep working.
+    { "pattern": "events.sourabh-bera.dev", "custom_domain": true },
+  ],
+  "vars": {
+    // Read on the server at request time (the NEXT_PUBLIC_* values are built in).
+    "EVENTS_API_BASE_URL": "https://events-api.sourabh-bera.dev",
+  },
+}
