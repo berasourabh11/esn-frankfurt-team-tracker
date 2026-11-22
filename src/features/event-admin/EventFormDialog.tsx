@@ -14,7 +14,10 @@ import {
 } from "@/components/ui/dialog";
 import { Field, Label, NativeSelect, Textarea, TextField } from "@/components/ui/form-controls";
 import { CATEGORY_LIST } from "@/lib/categories";
+import { formatEventDateRange, getBerlinToday, isUpcoming } from "@/lib/dateUtils";
+import { getParentCandidates } from "@/lib/eventGroups";
 import { useSession } from "@/features/auth/session";
+import { useEvents } from "@/services/eventClient";
 import {
   EventFormSchema,
   type EsnEvent,
@@ -40,6 +43,7 @@ export function EventFormDialog({
   event,
   hostIds,
   defaultDate,
+  parent,
   onSubmit,
 }: {
   open: boolean;
@@ -48,6 +52,8 @@ export function EventFormDialog({
   event?: EsnEvent;
   hostIds?: string[];
   defaultDate?: string;
+  /** When adding a sub-event: the main event it belongs to. */
+  parent?: EsnEvent;
   onSubmit: (values: EventFormValues, hostIds: string[]) => Promise<void>;
 }) {
   return (
@@ -58,6 +64,7 @@ export function EventFormDialog({
             event={event}
             initialHostIds={hostIds ?? []}
             defaultDate={defaultDate}
+            parent={parent}
             onCancel={() => onOpenChange(false)}
             onSubmit={onSubmit}
           />
@@ -71,17 +78,33 @@ function EventForm({
   event,
   initialHostIds,
   defaultDate,
+  parent,
   onCancel,
   onSubmit,
 }: {
   event?: EsnEvent;
   initialHostIds: string[];
   defaultDate?: string;
+  parent?: EsnEvent;
   onCancel: () => void;
   onSubmit: (values: EventFormValues, hostIds: string[]) => Promise<void>;
 }) {
   const id = useId();
   const { members } = useSession();
+  const { events } = useEvents();
+  const today = getBerlinToday();
+  // Past events are left out to keep the list short (unless already chosen).
+  const parentOptions = getParentCandidates(events, event).filter(
+    (p) => isUpcoming(p, today) || p.slug === event?.parentSlug || p.slug === parent?.slug,
+  );
+  const subEventCount = event ? events.filter((e) => e.parentSlug === event.slug).length : 0;
+  // A new sub-event starts with its main event's details.
+  const defaults = event ?? {
+    startDate: defaultDate ?? parent?.startDate,
+    category: parent?.category,
+    location: parent?.location,
+    parentSlug: parent?.slug,
+  };
   const [hostIds, setHostIds] = useState(initialHostIds);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -106,6 +129,7 @@ function EventForm({
       location: text("location"),
       priceInfo: text("priceInfo"),
       registrationUrl: text("registrationUrl"),
+      parentSlug: text("parentSlug"),
     });
     if (!result.success) {
       const next: Errors = {};
@@ -136,11 +160,13 @@ function EventForm({
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
       <DialogHeader className="pr-8">
-        <DialogTitle>{event ? "Edit event" : "Add event"}</DialogTitle>
+        <DialogTitle>{event ? "Edit event" : parent ? "Add sub-event" : "Add event"}</DialogTitle>
         <DialogDescription>
           {event
             ? "Changes are visible to everyone on the event page, feed and calendar."
-            : "The event appears in the Upcoming feed and the calendar right away."}
+            : parent
+              ? `Part of “${parent.title}”. It gets its own page and shows up in its programme.`
+              : "The event appears in the Upcoming feed and the calendar right away."}
         </DialogDescription>
       </DialogHeader>
 
@@ -148,9 +174,33 @@ function EventForm({
         <TextField name="title" defaultValue={event?.title} maxLength={100} autoFocus />
       </Field>
 
+      <Field
+        id={`${id}-parent`}
+        label="Part of"
+        hint={
+          subEventCount > 0
+            ? `This event has ${subEventCount} sub-event${subEventCount === 1 ? "" : "s"}, so it can't be part of another event.`
+            : "Optional. Pick the main event if this is one part of a bigger event (e.g. a weekend programme)."
+        }
+        error={errors.parentSlug}
+      >
+        <NativeSelect
+          name="parentSlug"
+          defaultValue={defaults.parentSlug ?? ""}
+          disabled={subEventCount > 0}
+        >
+          <option value="">Not part of another event</option>
+          {parentOptions.map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {p.title} ({formatEventDateRange(p)})
+            </option>
+          ))}
+        </NativeSelect>
+      </Field>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id={`${id}-category`} label="Category" error={errors.category}>
-          <NativeSelect name="category" defaultValue={event?.category ?? "social"}>
+          <NativeSelect name="category" defaultValue={defaults.category ?? "social"}>
             {CATEGORY_LIST.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
@@ -176,7 +226,7 @@ function EventForm({
           error={errors.startDate}
           className="sm:col-span-2"
         >
-          <TextField name="startDate" type="date" defaultValue={event?.startDate ?? defaultDate} />
+          <TextField name="startDate" type="date" defaultValue={defaults.startDate} />
         </Field>
         <Field
           id={`${id}-end-date`}
@@ -200,7 +250,7 @@ function EventForm({
           error={errors.location}
           className="sm:col-span-2"
         >
-          <TextField name="location" defaultValue={event?.location} maxLength={120} />
+          <TextField name="location" defaultValue={defaults.location} maxLength={120} />
         </Field>
       </div>
 
@@ -269,7 +319,7 @@ function EventForm({
           Cancel
         </Button>
         <Button type="submit" disabled={saving}>
-          {event ? "Save changes" : "Add event"}
+          {event ? "Save changes" : parent ? "Add sub-event" : "Add event"}
         </Button>
       </DialogFooter>
     </form>

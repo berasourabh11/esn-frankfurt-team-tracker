@@ -15,6 +15,7 @@ import {
   overlapsRange,
   type IsoDate,
 } from "@/lib/dateUtils";
+import { countSubEvents } from "@/lib/eventGroups";
 import { pluralize } from "@/lib/utils";
 import { useSession } from "@/features/auth/session";
 import { formatHostNames } from "@/features/event-team/EventHosts";
@@ -116,8 +117,21 @@ function useHostNames() {
   }, [infos, members]);
 }
 
+/** Main-event titles and sub-event counts, so cards can show how events belong together. */
+function useEventGroups() {
+  const { events } = useEvents();
+  return useMemo(
+    () => ({
+      titles: new Map(events.map((e) => [e.slug, e.title])),
+      subEventCounts: countSubEvents(events),
+    }),
+    [events],
+  );
+}
+
 function EventGrid({ events, today }: { events: EsnEvent[]; today: IsoDate }) {
   const hostNames = useHostNames();
+  const groups = useEventGroups();
   return (
     <ul className="grid gap-4 lg:grid-cols-2">
       {events.map((event) => (
@@ -126,6 +140,8 @@ function EventGrid({ events, today }: { events: EsnEvent[]; today: IsoDate }) {
             event={event}
             today={today}
             hosts={hostNames.get(event.slug)}
+            partOf={event.parentSlug ? groups.titles.get(event.parentSlug) : undefined}
+            subEventCount={groups.subEventCounts.get(event.slug)}
             className="flex-1"
           />
         </li>

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { canManageEvents } from "@/features/auth/permissions";
 import { useSession } from "@/features/auth/session";
-import { useEventAdminMutations } from "@/services/eventClient";
+import { useEventAdminMutations, useEvents } from "@/services/eventClient";
 import { useEventInfo, useSaveEventInfo } from "@/services/teamClient";
 import type { EsnEvent } from "@/types/event";
 
@@ -25,6 +25,8 @@ import { EventFormDialog } from "./EventFormDialog";
 export function EventAdminBar({ event }: { event: EsnEvent }) {
   const { member } = useSession();
   const { info } = useEventInfo(event.slug);
+  const { events } = useEvents();
+  const subEventCount = events.filter((e) => e.parentSlug === event.slug).length;
   const { updateEvent, deleteEvent } = useEventAdminMutations();
   const saveInfo = useSaveEventInfo();
   const router = useRouter();
@@ -86,6 +88,8 @@ export function EventAdminBar({ event }: { event: EsnEvent }) {
             <DialogDescription>
               The event disappears from the feed, the calendar and its page. Shifts, notes and
               reviews for it are no longer shown.
+              {subEventCount > 0 &&
+                ` Its ${subEventCount} sub-event${subEventCount === 1 ? " stays" : "s stay"} as separate events.`}
             </DialogDescription>
           </DialogHeader>
           {error && (

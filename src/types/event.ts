@@ -26,6 +26,10 @@ export const EventStatusSchema = z.enum(EVENT_STATUSES);
 export type EventStatus = z.infer<typeof EventStatusSchema>;
 
 const isoDate = z.iso.date();
+const slugSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be kebab-case");
 const wallClockTime = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected a 24h time in HH:mm format");
@@ -33,10 +37,12 @@ const wallClockTime = z
 export const EsnEventSchema = z
   .object({
     id: z.string().min(1),
-    slug: z
-      .string()
-      .min(1)
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be kebab-case"),
+    slug: slugSchema,
+    /**
+     * Set on sub-events: the slug of the main event they belong to (e.g. the
+     * "Murder Mystery" night of the CriminaLP weekend). One level only.
+     */
+    parentSlug: slugSchema.optional(),
     title: z.string().min(1),
     /** One or two sentences shown on cards. */
     summary: z.string().min(1),
@@ -99,6 +105,8 @@ export const EventFormSchema = z
     location: z.string().trim().max(120).optional(),
     priceInfo: z.string().trim().max(80).optional(),
     registrationUrl: webLinkSchema().optional(),
+    /** The main event this one is part of; leave out for stand-alone events. */
+    parentSlug: slugSchema.optional(),
   })
   .superRefine((v, ctx) => {
     if (v.endDate && v.endDate < v.startDate) {

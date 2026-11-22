@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Clock,
   ExternalLink,
+  Layers,
   Link2,
   MapPin,
   NotebookPen,
@@ -33,6 +34,7 @@ import { formatEventDateLong, formatTimeRange } from "@/lib/dateUtils";
 import { canManageEvents } from "@/features/auth/permissions";
 import { useSession } from "@/features/auth/session";
 import { SignInButton } from "@/features/auth/SignInDialog";
+import { useEvents } from "@/services/eventClient";
 import { useEventInfo, useSaveEventInfo } from "@/services/teamClient";
 import type { EsnEvent } from "@/types/event";
 import type { Member } from "@/types/team";
@@ -62,6 +64,10 @@ function QuickView({ event, onClose }: { event: EsnEvent; onClose: () => void })
   const meta = getCategoryMeta(event.category);
   const { member, members } = useSession();
   const { info } = useEventInfo(event.slug);
+  const { events } = useEvents();
+  const parentTitle = event.parentSlug
+    ? events.find((e) => e.slug === event.parentSlug)?.title
+    : undefined;
   const hosts = info.hostIds
     .map((id) => members.find((m) => m.id === id))
     .filter((m): m is Member => !!m);
@@ -90,6 +96,12 @@ function QuickView({ event, onClose }: { event: EsnEvent; onClose: () => void })
             )}
             {event.status === "cancelled" && <Badge variant="secondary">Cancelled</Badge>}
           </div>
+          {parentTitle && (
+            <p className="flex items-center gap-1 text-sm font-semibold text-white/90">
+              <Layers className="size-4 shrink-0" aria-hidden="true" />
+              Part of {parentTitle}
+            </p>
+          )}
           <DialogTitle className="text-2xl leading-tight font-extrabold text-white">
             {event.title}
           </DialogTitle>

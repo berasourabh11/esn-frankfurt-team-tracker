@@ -344,7 +344,7 @@ describe("registration and moderation", () => {
 describe("events", () => {
   it("lists events publicly in the frontend's format", async () => {
     const list = await api.call("GET", "/api/events");
-    expect(list.data).toHaveLength(131);
+    expect(list.data).toHaveLength(132);
     expect(EsnEventSchema.array().parse(list.data)[0].startDate <= list.data[1].startDate).toBe(
       true,
     );
@@ -402,6 +402,65 @@ describe("events", () => {
       .bind(shift.data.id)
       .first<{ n: number }>();
     expect(row?.n).toBe(0);
+  });
+
+  it("groups sub-events under a main event, one level deep", async () => {
+    const murder = await api.call("GET", "/api/events/criminalp-murder-mystery-2026-11-22");
+    expect(murder.data.parentSlug).toBe("criminalp-2026-11-20");
+    const all = (await api.call("GET", "/api/events")).data as { parentSlug?: string }[];
+    expect(all.filter((e) => e.parentSlug === "criminalp-2026-11-20")).toHaveLength(3);
+
+    const member = await api.login(emails.member);
+    const sub = { ...newEvent, title: "CriminaLP: Brunch", parentSlug: "criminalp-2026-11-20" };
+    const created = await api.call("POST", "/api/events", { cookie: member, body: sub });
+    expect(created.status).toBe(201);
+    expect(created.data.parentSlug).toBe("criminalp-2026-11-20");
+
+    const refuse = async (method: string, path: string, body: object, error: string) => {
+      const res = await api.call(method, path, { cookie: member, body });
+      expect(res.status).toBe(400);
+      expect(res.data.error).toBe(error);
+    };
+    // No sub-events of sub-events, no loops, no unknown main events.
+    await refuse(
+      "POST",
+      "/api/events",
+      { ...newEvent, parentSlug: created.data.slug },
+      "“CriminaLP: Brunch” is a sub-event itself, so it can't have sub-events.",
+    );
+    await refuse(
+      "PUT",
+      "/api/events/criminalp-2026-11-20",
+      { ...newEvent, parentSlug: "international-dinner-2026-12-08" },
+      "This event has sub-events of its own, so it can't be part of another event.",
+    );
+    await refuse(
+      "PUT",
+      "/api/events/international-dinner-2026-12-08",
+      { ...newEvent, parentSlug: "international-dinner-2026-12-08" },
+      "An event can't be part of itself.",
+    );
+    await refuse(
+      "POST",
+      "/api/events",
+      { ...newEvent, parentSlug: "no-such-event" },
+      "The main event doesn't exist (anymore).",
+    );
+
+    // Editing without a main event detaches it.
+    const detached = await api.call("PUT", `/api/events/${created.data.slug}`, {
+      cookie: member,
+      body: { ...sub, parentSlug: undefined },
+    });
+    expect(detached.data.parentSlug).toBeUndefined();
+
+    // Removing the main event keeps its sub-events as stand-alone events.
+    expect(
+      (await api.call("DELETE", "/api/events/criminalp-2026-11-20", { cookie: member })).status,
+    ).toBe(204);
+    const after = await api.call("GET", "/api/events/criminalp-murder-mystery-2026-11-22");
+    expect(after.status).toBe(200);
+    expect(after.data.parentSlug).toBeUndefined();
   });
 
   it("shares hosts publicly but notes and links only with members", async () => {

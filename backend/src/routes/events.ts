@@ -29,6 +29,7 @@ export interface EventRow {
   registration_url: string | null;
   image_url: string | null;
   tags: string;
+  parent_slug: string | null;
 }
 
 export function toEvent(row: EventRow): EsnEvent {
@@ -49,6 +50,7 @@ export function toEvent(row: EventRow): EsnEvent {
     registrationUrl: row.registration_url,
     imageUrl: row.image_url,
     tags: JSON.parse(row.tags) as string[],
+    parentSlug: row.parent_slug,
   }) as EsnEvent;
 }
 
@@ -67,7 +69,37 @@ function columns(values: EventFormValues) {
     orNull(values.location || null),
     orNull(values.priceInfo || null),
     orNull(values.registrationUrl),
+    orNull(values.parentSlug),
   ] as const;
+}
+
+/**
+ * Checks that `parentSlug` can be the main event of `slug` (or of a new
+ * event): it exists, isn't a sub-event itself, and nesting stays one level.
+ */
+async function assertValidParent(db: Database, parentSlug: string | undefined, slug?: string) {
+  if (!parentSlug) return;
+  if (parentSlug === slug) throw new HttpError(400, "An event can't be part of itself.");
+  const parent = await getEventRow(db, parentSlug);
+  if (!parent) throw new HttpError(400, "The main event doesn't exist (anymore).");
+  if (parent.parent_slug) {
+    throw new HttpError(
+      400,
+      `“${parent.title}” is a sub-event itself, so it can't have sub-events.`,
+    );
+  }
+  if (slug) {
+    const child = await db
+      .prepare("SELECT 1 AS found FROM events WHERE parent_slug = ? LIMIT 1")
+      .bind(slug)
+      .first<{ found: number }>();
+    if (child) {
+      throw new HttpError(
+        400,
+        "This event has sub-events of its own, so it can't be part of another event.",
+      );
+    }
+  }
 }
 
 async function uniqueSlug(db: Database, title: string, date: string) {
@@ -163,14 +195,15 @@ export const eventRoutes = new Hono<AppEnv>()
     const user = requireManager(c);
     const values = await readBody(c, EventFormSchema);
     const db = c.env.DB;
+    await assertValidParent(db, values.parentSlug);
     const slug = await uniqueSlug(db, values.title, values.startDate);
     const now = nowIso();
     await db
       .prepare(
         `INSERT INTO events (title, summary, description, category, status, start_date, end_date,
-           start_time, end_time, location, price_info, registration_url,
+           start_time, end_time, location, price_info, registration_url, parent_slug,
            id, slug, tags, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
       )
       .bind(...columns(values), newId("e"), slug, user.id, now, now)
       .run();
@@ -183,11 +216,12 @@ export const eventRoutes = new Hono<AppEnv>()
     const db = c.env.DB;
     await requireEvent(db, slug);
     const values = await readBody(c, EventFormSchema);
+    await assertValidParent(db, values.parentSlug, slug);
     await db
       .prepare(
         `UPDATE events SET title = ?, summary = ?, description = ?, category = ?, status = ?,
            start_date = ?, end_date = ?, start_time = ?, end_time = ?, location = ?,
-           price_info = ?, registration_url = ?, updated_at = ?
+           price_info = ?, registration_url = ?, parent_slug = ?, updated_at = ?
          WHERE slug = ?`,
       )
       .bind(...columns(values), nowIso(), slug)
@@ -195,7 +229,10 @@ export const eventRoutes = new Hono<AppEnv>()
     return c.json(toEvent(await requireEvent(db, slug)));
   })
 
-  /** Also removes the event's shifts, tasks, hosts, notes and reviews. */
+  /**
+   * Also removes the event's shifts, tasks, hosts, notes and reviews. Its
+   * sub-events stay, as stand-alone events.
+   */
   .delete("/events/:slug", async (c) => {
     requireManager(c);
     const slug = c.req.param("slug");

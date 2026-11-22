@@ -10,18 +10,24 @@ import { canManageEvents } from "@/features/auth/permissions";
 import { useSession } from "@/features/auth/session";
 import { useEventAdminMutations, useEvents } from "@/services/eventClient";
 import { useSaveEventInfo } from "@/services/teamClient";
+import type { EsnEvent } from "@/types/event";
 
 import { EventFormDialog } from "./EventFormDialog";
 
-/** "Add event" for organisers and board members; hidden for everyone else. */
+/**
+ * "Add event" for members who manage events; hidden for everyone else.
+ * With `parent`, it adds a sub-event of that main event.
+ */
 export function AddEventButton({
   defaultDate,
-  label = "Add event",
+  parent,
+  label = parent ? "Add sub-event" : "Add event",
   variant = "default",
   size,
   className,
 }: {
   defaultDate?: string;
+  parent?: EsnEvent;
   label?: string;
   className?: string;
 } & VariantProps<typeof buttonVariants>) {
@@ -44,6 +50,7 @@ export function AddEventButton({
         open={open}
         onOpenChange={setOpen}
         defaultDate={defaultDate}
+        parent={parent}
         hostIds={member ? [member.id] : []}
         onSubmit={async (values, hostIds) => {
           const created = await createEvent.mutateAsync({

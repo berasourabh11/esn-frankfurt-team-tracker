@@ -8,11 +8,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EventAdminBar } from "@/features/event-admin/EventAdminBar";
 import { EventHosts } from "@/features/event-team/EventHosts";
 import { EventTeamPanel } from "@/features/event-team/EventTeamPanel";
-import { useResolvedEvent } from "@/services/eventClient";
+import { getParentEvent, getSubEvents } from "@/lib/eventGroups";
+import { useEvents, useResolvedEvent } from "@/services/eventClient";
 import type { EsnEvent } from "@/types/event";
 
 import { EventFacts } from "./EventFacts";
 import { EventHero } from "./EventHero";
+import { SubEventsSection } from "./SubEventsSection";
 
 /**
  * The event page body. Starts from the server-rendered event (good for SEO
@@ -27,6 +29,7 @@ export function EventWorkspace({
   serverEvent: EsnEvent | null;
 }) {
   const resolved = useResolvedEvent(slug, serverEvent);
+  const { events } = useEvents();
 
   if (resolved.state === "loading" && !resolved.event) {
     return <Skeleton className="h-72 rounded-3xl" aria-label="Loading event" />;
@@ -36,13 +39,14 @@ export function EventWorkspace({
   }
 
   const event = resolved.event!;
+  const parent = getParentEvent(events, event);
 
   return (
     <>
       <div className="mb-4 flex justify-end empty:hidden">
         <EventAdminBar event={event} />
       </div>
-      <EventHero event={event} />
+      <EventHero event={event} parent={parent} />
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
         {/* Facts come first on mobile, in the sidebar on desktop. */}
         <EventFacts
@@ -66,6 +70,10 @@ export function EventWorkspace({
                 ))}
               </div>
             </section>
+          )}
+          {/* Sub-events can't have their own sub-events. */}
+          {!event.parentSlug && (
+            <SubEventsSection event={event} subEvents={getSubEvents(events, event.slug)} />
           )}
           <EventTeamPanel
             event={{

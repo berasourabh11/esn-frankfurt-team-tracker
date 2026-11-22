@@ -137,11 +137,18 @@ export function buildIcsCalendar(events: readonly EsnEvent[], options: BuildIcsO
     ...VTIMEZONE_BERLIN,
   ];
 
+  const titles = new Map(events.map((e) => [e.slug, e.title]));
   for (const event of events) {
     if (event.status === "cancelled") continue;
     const times = getEventIcsTimes(event);
     const url = siteUrl ? `${siteUrl.replace(/\/+$/, "")}/events/${event.slug}` : undefined;
-    const description = [event.description, event.priceInfo && `Price: ${event.priceInfo}`, url]
+    const parentTitle = event.parentSlug ? titles.get(event.parentSlug) : undefined;
+    const description = [
+      parentTitle && `Part of ${parentTitle}.`,
+      event.description,
+      event.priceInfo && `Price: ${event.priceInfo}`,
+      url,
+    ]
       .filter(Boolean)
       .join("\n\n");
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, CalendarRange, Clock, MapPin, UserRound } from "lucide-react";
+import { ArrowUpRight, CalendarRange, Clock, Layers, MapPin, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,12 +19,18 @@ export function EventCard({
   event,
   today,
   hosts,
+  partOf,
+  subEventCount = 0,
   className,
 }: {
   event: EsnEvent;
   today?: IsoDate;
   /** Display names of the hosts, e.g. "Aisha & Jonas". */
   hosts?: string | null;
+  /** Title of the main event, for sub-events. */
+  partOf?: string;
+  /** For main events: how many sub-events they include. */
+  subEventCount?: number;
   className?: string;
 }) {
   const time = formatTimeRange(event);
@@ -56,7 +62,20 @@ export function EventCard({
           )}
           {event.status === "tentative" && <Badge variant="warning">To be confirmed</Badge>}
           {event.status === "cancelled" && <Badge variant="outline">Cancelled</Badge>}
+          {subEventCount > 0 && (
+            <Badge variant="outline" className="gap-1">
+              <Layers className="size-3" aria-hidden="true" />
+              Includes {subEventCount} event{subEventCount === 1 ? "" : "s"}
+            </Badge>
+          )}
         </div>
+
+        {partOf && (
+          <p className="-mb-1 flex min-w-0 items-center gap-1 text-xs font-semibold text-primary">
+            <Layers className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">Part of {partOf}</span>
+          </p>
+        )}
 
         <h3 id={titleId} className="text-base leading-snug font-bold text-balance sm:text-lg">
           <Link

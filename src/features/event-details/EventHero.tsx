@@ -1,4 +1,5 @@
-import { CalendarDays, Clock, MapPin } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Clock, Layers, MapPin } from "lucide-react";
 
 import { CategoryBadge } from "@/components/events/CategoryBadge";
 import { CategoryIcon } from "@/components/events/CategoryIcon";
@@ -8,7 +9,7 @@ import { formatEventDateLong, formatTimeRange } from "@/lib/dateUtils";
 import type { EsnEvent } from "@/types/event";
 
 /** Full-width event header on the event page. */
-export function EventHero({ event }: { event: EsnEvent }) {
+export function EventHero({ event, parent }: { event: EsnEvent; parent?: EsnEvent }) {
   const meta = getCategoryMeta(event.category);
   const time = formatTimeRange(event);
 
@@ -39,6 +40,15 @@ export function EventHero({ event }: { event: EsnEvent }) {
           </Badge>
         )}
       </div>
+      {parent && (
+        <Link
+          href={`/events/${parent.slug}`}
+          className="mt-4 inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-semibold backdrop-blur transition hover:bg-white/25 focus-visible:ring-[3px] focus-visible:ring-white/60 focus-visible:outline-none"
+        >
+          <Layers className="size-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">Part of {parent.title}</span>
+        </Link>
+      )}
       <h1 className="mt-4 max-w-3xl text-3xl leading-tight font-extrabold tracking-tight text-balance sm:text-5xl">
         {event.title}
       </h1>

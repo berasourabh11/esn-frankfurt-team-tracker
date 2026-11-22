@@ -572,12 +572,24 @@ const curated: EsnEventInput[] = [
   }),
   danceClass("Afro Dance Class", "2026-11-19", "18:00", "20:00", "SH Campus"),
   seed({
+    title: "CriminaLP",
+    category: "social",
+    startDate: "2026-11-20",
+    endDate: "2026-11-22",
+    location: "Frankfurt",
+    summary: "A crime-themed weekend: kiosk crawl, party night and a murder mystery.",
+    description:
+      "CriminaLP is a crime-themed weekend with three events: a kiosk crawl through the Bahnhofsviertel, a party night with a cosy board-game alternative, and a murder mystery evening. Join one night or all three; each has its own page with the details.",
+    tags: ["criminalp"],
+  }),
+  seed({
     title: "CriminaLP: Kiosk Crawl",
     category: "parties",
     startDate: "2026-11-20",
     location: "Bahnhofsviertel",
     summary: "Have fun around the old streets near the Hauptbahnhof on a kiosk crawl.",
     tags: ["criminalp"],
+    parentSlug: "criminalp-2026-11-20",
   }),
   seed({
     title: "CriminaLP: Party & Cozy Board Games",
@@ -586,6 +598,7 @@ const curated: EsnEventInput[] = [
     startDate: "2026-11-21",
     summary: "Party night with a cosy board-game alternative. Plans still being confirmed.",
     tags: ["criminalp"],
+    parentSlug: "criminalp-2026-11-20",
   }),
   seed({
     title: "CriminaLP: Murder Mystery",
@@ -593,6 +606,7 @@ const curated: EsnEventInput[] = [
     startDate: "2026-11-22",
     summary: "Solve the case in our murder mystery evening. Dressing up is encouraged!",
     tags: ["criminalp"],
+    parentSlug: "criminalp-2026-11-20",
   }),
   stammtisch("2026-11-23"),
   seed({

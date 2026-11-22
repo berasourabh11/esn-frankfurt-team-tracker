@@ -35,7 +35,10 @@ function q(value: string | number | boolean | null | undefined): string {
 const insert = (table: string, row: Record<string, string | number | boolean | null | undefined>) =>
   `INSERT INTO ${table} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
 
-const events = mockEvents.map((e) => EsnEventSchema.parse(e));
+// Main events first, so sub-events can point at them.
+const events = mockEvents
+  .map((e) => EsnEventSchema.parse(e))
+  .sort((a, b) => Number(Boolean(a.parentSlug)) - Number(Boolean(b.parentSlug)));
 const eventSql = events.map((e) =>
   insert("events", {
     id: e.id,
@@ -54,6 +57,7 @@ const eventSql = events.map((e) =>
     registration_url: e.registrationUrl,
     image_url: e.imageUrl,
     tags: JSON.stringify(e.tags),
+    parent_slug: e.parentSlug,
     created_at: SEED_TIME,
     updated_at: SEED_TIME,
   }),

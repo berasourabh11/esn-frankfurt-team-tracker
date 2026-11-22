@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api";
 import { sortEvents } from "@/lib/dateUtils";
+import { withoutDanglingParents } from "@/lib/eventGroups";
 import { slugify } from "@/lib/utils";
 import { EsnEventSchema, type EsnEvent, type EventFormValues } from "@/types/event";
 
@@ -45,7 +46,7 @@ export function applyEventChanges(events: readonly EsnEvent[], changes: EventCha
   for (const created of changes.created) {
     if (!deleted.has(created.slug) && !known.has(created.slug)) merged.push(created);
   }
-  return sortEvents(merged);
+  return sortEvents(withoutDanglingParents(merged));
 }
 
 /** A unique, URL-friendly slug such as "pub-quiz-2026-12-10" (or "-2", "-3", …). */
@@ -82,6 +83,7 @@ export function eventFromForm(
     registrationUrl: values.registrationUrl,
     imageUrl: base?.imageUrl,
     tags: base?.tags ?? [],
+    parentSlug: values.parentSlug,
   });
 }
 
