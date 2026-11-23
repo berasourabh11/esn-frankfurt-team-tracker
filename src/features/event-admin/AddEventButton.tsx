@@ -8,7 +8,7 @@ import { CalendarPlus } from "lucide-react";
 import { Button, type buttonVariants } from "@/components/ui/button";
 import { canManageEvents } from "@/features/auth/permissions";
 import { useSession } from "@/features/auth/session";
-import { useEventAdminMutations, useEvents } from "@/services/eventClient";
+import { getEventAdminService, useEventAdminMutations, useEvents } from "@/services/eventClient";
 import { useSaveEventInfo } from "@/services/teamClient";
 import type { EsnEvent } from "@/types/event";
 
@@ -33,7 +33,7 @@ export function AddEventButton({
 } & VariantProps<typeof buttonVariants>) {
   const { member } = useSession();
   const { events } = useEvents();
-  const { createEvent } = useEventAdminMutations();
+  const { createEvent, createSeries } = useEventAdminMutations();
   const saveInfo = useSaveEventInfo();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -52,11 +52,26 @@ export function AddEventButton({
         defaultDate={defaultDate}
         parent={parent}
         hostIds={member ? [member.id] : []}
-        onSubmit={async (values, hostIds) => {
-          const created = await createEvent.mutateAsync({
-            values,
-            existingSlugs: events.map((e) => e.slug),
-          });
+        onSubmit={async (values, hostIds, recurrence) => {
+          const existingSlugs = events.map((e) => e.slug);
+          if (recurrence) {
+            // Repeating: one series; the API keeps the hosts for every date.
+            const first = await createSeries.mutateAsync({
+              input: { values, recurrence, hostIds },
+              existingSlugs,
+            });
+            if (hostIds.length && getEventAdminService().overlay) {
+              await saveInfo.mutateAsync({
+                eventSlug: first.slug,
+                patch: { hostIds },
+                updatedBy: member?.id,
+              });
+            }
+            setOpen(false);
+            router.push(`/events/${first.slug}`);
+            return;
+          }
+          const created = await createEvent.mutateAsync({ values, existingSlugs });
           if (hostIds.length) {
             await saveInfo.mutateAsync({
               eventSlug: created.slug,

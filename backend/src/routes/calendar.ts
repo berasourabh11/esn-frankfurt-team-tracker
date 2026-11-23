@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { buildIcsCalendar } from "../../../src/lib/ics";
 import type { AppEnv } from "../http";
 import { EVENT_CATEGORIES, type EventCategory } from "../shared";
-import { toEvent, type EventRow } from "./events";
+import { listAllEvents } from "../series";
 
 /**
  * Public iCalendar feed for calendar apps (Google Calendar, Apple Calendar,
@@ -23,12 +23,10 @@ export const calendarRoutes = new Hono<AppEnv>().get("/calendar.ics", async (c) 
     .map((s) => s.trim())
     .filter((s): s is EventCategory => (EVENT_CATEGORIES as readonly string[]).includes(s));
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT * FROM events ORDER BY start_date, start_time",
-  ).all<EventRow>();
-  const events = results
-    .map(toEvent)
-    .filter((e) => requested.length === 0 || requested.includes(e.category));
+  // Repeating events are listed date by date (up to a year ahead).
+  const events = (await listAllEvents(c.env.DB)).filter(
+    (e) => requested.length === 0 || requested.includes(e.category),
+  );
 
   const ics = buildIcsCalendar(events, {
     calendarName: "ESN Frankfurt Events",

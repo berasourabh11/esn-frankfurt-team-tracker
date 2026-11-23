@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, Clock, Layers, MapPin } from "lucide-react";
+import { CalendarDays, Clock, Layers, MapPin, Repeat } from "lucide-react";
 
 import { CategoryBadge } from "@/components/events/CategoryBadge";
 import { CategoryIcon } from "@/components/events/CategoryIcon";
@@ -9,7 +9,16 @@ import { formatEventDateLong, formatTimeRange } from "@/lib/dateUtils";
 import type { EsnEvent } from "@/types/event";
 
 /** Full-width event header on the event page. */
-export function EventHero({ event, parent }: { event: EsnEvent; parent?: EsnEvent }) {
+export function EventHero({
+  event,
+  parent,
+  repeats,
+}: {
+  event: EsnEvent;
+  parent?: EsnEvent;
+  /** For dates of repeating events, e.g. "Every week on Wednesday". */
+  repeats?: string;
+}) {
   const meta = getCategoryMeta(event.category);
   const time = formatTimeRange(event);
 
@@ -62,6 +71,12 @@ export function EventHero({ event, parent }: { event: EsnEvent; parent?: EsnEven
           <Clock className="size-4" aria-hidden="true" />
           {time ?? "Time to be announced"}
         </li>
+        {repeats && (
+          <li className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 backdrop-blur">
+            <Repeat className="size-4" aria-hidden="true" />
+            {repeats}
+          </li>
+        )}
         {event.location && (
           <li className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 backdrop-blur">
             <MapPin className="size-4" aria-hidden="true" />

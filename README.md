@@ -122,6 +122,29 @@ exactly the same data. Dates are `YYYY-MM-DD` and times are `HH:mm` (Berlin wall
 Events are cached on the server for a few minutes; in API mode the browser fetches fresh data,
 so changes show immediately.
 
+## Repeating events
+
+When adding an event, **Repeats** turns it into a repeating event: every week, every two
+weeks, or monthly (on the same weekday, e.g. "first Wednesday", or the same day of the month).
+It can stop on a date, after a number of dates, or never.
+
+- **Stored once.** The API keeps a series as one row in `event_series` (its details, rule,
+  removed dates and default hosts). `GET /api/events` and the calendar feed generate its dates
+  on the fly, up to a year ahead (`src/lib/recurrence.ts`, shared with the frontend), so a
+  weekly event doesn't add 52 rows a year.
+- **Each date is a normal event** with its own page (`/events/{series-slug}-{date}`),
+  shifts, notes and reviews. A date gets its own row in `events` (`series_id` + `series_date`)
+  only once something is saved for it: a change to just that date, a shift, notes or hosts.
+  It keeps the same id and slug, so links and calendar entries don't change.
+- **Editing** a date asks: _Only this date_ or _All dates_. "All dates" updates the series;
+  dates from today on that were saved on their own follow it, and ones that no longer fit a
+  changed rule stay as separate events (so their shifts aren't lost). **Removing** offers
+  _Remove this date_ or _Remove all dates_.
+- Dates of repeating events can't be main events or sub-events.
+
+API: `GET/POST /api/series`, `GET/PUT/DELETE /api/series/{id}`; single dates go through
+`/api/events/{slug}`.
+
 ## Team area (members, shifts, tasks, event review)
 
 Signed-in ESN members get a **Team area** below each event, at `/events/[slug]#team`:

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { addDaysIso, getBerlinToday } from "@/lib/dateUtils";
 import { EsnEventSchema } from "@/types/event";
 import { EventTaskSchema, EventTeamInfoSchema, MemberSchema, ReviewNoteSchema } from "@/types/team";
 
@@ -505,6 +506,188 @@ describe("events", () => {
         })
       ).status,
     ).toBe(403);
+  });
+});
+
+describe("repeating events", () => {
+  // A week from today, so the dates are always in the future.
+  const first = addDaysIso(getBerlinToday(), 7);
+  const date = (week: number) => addDaysIso(first, 7 * week);
+  const cafe = {
+    event: {
+      title: "Tandem Evening",
+      summary: "Practise languages over coffee and cake.",
+      category: "social",
+      status: "scheduled",
+      startDate: first,
+      startTime: "19:00",
+      location: "Café Kante",
+    },
+    recurrence: { frequency: "weekly", interval: 1, count: 5 },
+    hostIds: ["m-aisha"],
+  };
+  const slug = (week: number) => `tandem-evening-${date(week)}`;
+  const cafeSlugs = async () =>
+    ((await api.call("GET", "/api/events")).data as { slug: string; seriesId?: string }[])
+      .filter((e) => e.seriesId)
+      .map((e) => e.slug);
+
+  it("is stored once and listed date by date", async () => {
+    const user = await api.login(emails.user);
+    expect((await api.call("POST", "/api/series", { cookie: user, body: cafe })).status).toBe(403);
+
+    const member = await api.login(emails.member);
+    const created = await api.call("POST", "/api/series", { cookie: member, body: cafe });
+    expect(created.status).toBe(201);
+    expect(created.data.series).toMatchObject({
+      slug: "tandem-evening",
+      recurrence: { frequency: "weekly", interval: 1, count: 5 },
+      hostIds: ["m-aisha"],
+    });
+    expect(created.data.firstEvent.slug).toBe(slug(0));
+
+    // One series row, no event rows; five generated dates.
+    expect(await cafeSlugs()).toEqual([0, 1, 2, 3, 4].map(slug));
+    const third = await api.call("GET", `/api/events/${slug(2)}`);
+    expect(EsnEventSchema.parse(third.data)).toMatchObject({
+      title: "Tandem Evening",
+      startDate: date(2),
+      startTime: "19:00",
+      seriesId: created.data.series.id,
+    });
+    expect(
+      (await api.call("GET", `/api/events/tandem-evening-${addDaysIso(first, 1)}`)).status,
+    ).toBe(404);
+    // Default hosts show on every date.
+    const infos = (await api.call("GET", "/api/events/team-info")).data as {
+      eventSlug: string;
+      hostIds: string[];
+    }[];
+    expect(infos.find((i) => i.eventSlug === slug(4))?.hostIds).toEqual(["m-aisha"]);
+
+    const ics = (await api.raw("/api/calendar.ics")).text;
+    expect(ics.match(/SUMMARY:Tandem Evening/g)).toHaveLength(5);
+
+    // Regular events with the same name get other slugs than its dates.
+    const single = await api.call("POST", "/api/events", {
+      cookie: member,
+      body: { ...cafe.event, startDate: date(1) },
+    });
+    expect(single.data.slug).toBe(`${slug(1)}-2`);
+    // And a second series with the same name gets its own slug.
+    const again = await api.call("POST", "/api/series", { cookie: member, body: cafe });
+    expect(again.data.series.slug).toBe("tandem-evening-2");
+  });
+
+  it("changes, plans and removes single dates", async () => {
+    const member = await api.login(emails.member);
+    const { series } = (await api.call("POST", "/api/series", { cookie: member, body: cafe })).data;
+
+    // Only this date: it's stored on its own with the same id and slug.
+    const moved = await api.call("PUT", `/api/events/${slug(1)}`, {
+      cookie: member,
+      body: { ...cafe.event, startDate: date(1), startTime: "20:00" },
+    });
+    expect(moved.status).toBe(200);
+    expect(moved.data).toMatchObject({
+      slug: slug(1),
+      id: `${series.id}-${date(1)}`,
+      startTime: "20:00",
+    });
+
+    // Shifts on a generated date store that date first (with the series' hosts).
+    const shift = await api.call("POST", `/api/events/${slug(2)}/tasks`, {
+      cookie: member,
+      body: { kind: "task", title: "Bring name tags", peopleNeeded: 1 },
+    });
+    expect(shift.status).toBe(201);
+    const info = (await api.call("GET", "/api/events/team-info")).data as {
+      eventSlug: string;
+      hostIds: string[];
+    }[];
+    expect(info.find((i) => i.eventSlug === slug(2))?.hostIds).toEqual(["m-aisha"]);
+    expect(await cafeSlugs()).toEqual([0, 1, 2, 3, 4].map(slug));
+
+    // A date can't be a main event or a sub-event.
+    const refused = await api.call("POST", "/api/events", {
+      cookie: member,
+      body: { ...newEvent, parentSlug: slug(3) },
+    });
+    expect(refused.data.error).toBe("A date of a repeating event can't have sub-events.");
+
+    // Removing single dates, generated or stored.
+    for (const week of [0, 1]) {
+      expect(
+        (await api.call("DELETE", `/api/events/${slug(week)}`, { cookie: member })).status,
+      ).toBe(204);
+    }
+    expect(await cafeSlugs()).toEqual([2, 3, 4].map(slug));
+    expect((await api.call("GET", `/api/events/${slug(0)}`)).status).toBe(404);
+    const after = await api.call("GET", `/api/series/${series.id}`);
+    expect(after.data.excludedDates).toEqual([date(0), date(1)]);
+  });
+
+  it("changes and removes the whole series", async () => {
+    const member = await api.login(emails.member);
+    const { series } = (await api.call("POST", "/api/series", { cookie: member, body: cafe })).data;
+    // Date 2 is stored (it has a task), date 1 too (changed on its own).
+    await api.call("POST", `/api/events/${slug(2)}/tasks`, {
+      cookie: member,
+      body: { kind: "task", title: "Bring name tags", peopleNeeded: 1 },
+    });
+    await api.call("PUT", `/api/events/${slug(1)}`, {
+      cookie: member,
+      body: { ...cafe.event, startDate: date(1), title: "Tandem Evening: Spanish" },
+    });
+
+    // Every 2 weeks, later in the evening: dates 0, 2, 4 remain.
+    const edited = await api.call("PUT", `/api/series/${series.id}`, {
+      cookie: member,
+      body: {
+        ...cafe,
+        event: { ...cafe.event, startTime: "20:00" },
+        recurrence: { frequency: "weekly", interval: 2, until: date(4) },
+        hostIds: ["m-lena"],
+      },
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.data.recurrence).toEqual({ frequency: "weekly", interval: 2, until: date(4) });
+
+    const events = (await api.call("GET", "/api/events")).data as {
+      slug: string;
+      seriesId?: string;
+      startTime?: string;
+      title: string;
+    }[];
+    const bySlug = new Map(events.map((e) => [e.slug, e]));
+    expect(await cafeSlugs()).toEqual([0, 2, 4].map(slug));
+    // The stored date follows the series, and keeps its task.
+    expect(bySlug.get(slug(2))?.startTime).toBe("20:00");
+    const tasks = await api.call("GET", `/api/events/${slug(2)}/tasks`, { cookie: member });
+    expect(tasks.data).toHaveLength(1);
+    // The changed date no longer fits: it stays, as a separate event.
+    expect(bySlug.get(slug(1))).toMatchObject({ title: "Tandem Evening: Spanish" });
+    expect(bySlug.get(slug(1))?.seriesId).toBeUndefined();
+
+    expect((await api.call("DELETE", `/api/series/${series.id}`, { cookie: member })).status).toBe(
+      204,
+    );
+    expect(await cafeSlugs()).toEqual([]);
+    expect((await api.call("GET", `/api/events/${slug(2)}`)).status).toBe(404);
+    expect((await api.call("GET", `/api/events/${slug(1)}`)).status).toBe(200);
+  });
+
+  it("rejects invalid rules", async () => {
+    const member = await api.login(emails.member);
+    const res = await api.call("POST", "/api/series", {
+      cookie: member,
+      body: {
+        ...cafe,
+        recurrence: { frequency: "weekly", interval: 1, until: addDaysIso(first, -1) },
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.error).toContain("The last date is before the first one");
   });
 });
 

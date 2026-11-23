@@ -1,77 +1,32 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { HttpError, activeUser, compact, readBody, requireManager, type AppEnv } from "../http";
+import { HttpError, activeUser, readBody, requireManager, type AppEnv } from "../http";
 import type { Database } from "../db";
+import {
+  EVENT_COLUMN_UPDATES,
+  eventColumns,
+  getEventRow,
+  insertEvent,
+  toEvent,
+  type EventRow,
+} from "../eventRows";
 import { newId, nowIso, orNull, slugify } from "../lib/util";
+import {
+  ensureEventRow,
+  excludeDateStatement,
+  findVirtualOccurrence,
+  listAllEvents,
+  listVirtualOccurrences,
+  requireSeries,
+  storeOccurrence,
+} from "../series";
 import {
   EventFormSchema,
   ImportantLinkSchema,
-  type EsnEvent,
   type EventFormValues,
   type EventTeamInfo,
 } from "../shared";
-
-export interface EventRow {
-  id: string;
-  slug: string;
-  title: string;
-  summary: string;
-  description: string;
-  category: EsnEvent["category"];
-  status: EsnEvent["status"];
-  start_date: string;
-  end_date: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  location: string | null;
-  price_info: string | null;
-  registration_url: string | null;
-  image_url: string | null;
-  tags: string;
-  parent_slug: string | null;
-}
-
-export function toEvent(row: EventRow): EsnEvent {
-  return compact({
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
-    summary: row.summary,
-    description: row.description,
-    category: row.category,
-    status: row.status,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    startTime: row.start_time,
-    endTime: row.end_time,
-    location: row.location,
-    priceInfo: row.price_info,
-    registrationUrl: row.registration_url,
-    imageUrl: row.image_url,
-    tags: JSON.parse(row.tags) as string[],
-    parentSlug: row.parent_slug,
-  }) as EsnEvent;
-}
-
-/** Same column values for create and update (mirrors the frontend's eventFromForm). */
-function columns(values: EventFormValues) {
-  return [
-    values.title,
-    values.summary,
-    values.description?.trim() || values.summary,
-    values.category,
-    values.status,
-    values.startDate,
-    values.endDate && values.endDate !== values.startDate ? values.endDate : null,
-    orNull(values.startTime),
-    orNull(values.endTime),
-    orNull(values.location || null),
-    orNull(values.priceInfo || null),
-    orNull(values.registrationUrl),
-    orNull(values.parentSlug),
-  ] as const;
-}
 
 /**
  * Checks that `parentSlug` can be the main event of `slug` (or of a new
@@ -81,7 +36,18 @@ async function assertValidParent(db: Database, parentSlug: string | undefined, s
   if (!parentSlug) return;
   if (parentSlug === slug) throw new HttpError(400, "An event can't be part of itself.");
   const parent = await getEventRow(db, parentSlug);
-  if (!parent) throw new HttpError(400, "The main event doesn't exist (anymore).");
+  if (!parent) {
+    const repeating = await findVirtualOccurrence(db, parentSlug);
+    throw new HttpError(
+      400,
+      repeating
+        ? "A date of a repeating event can't have sub-events."
+        : "The main event doesn't exist (anymore).",
+    );
+  }
+  if (parent.series_id) {
+    throw new HttpError(400, "A date of a repeating event can't have sub-events.");
+  }
   if (parent.parent_slug) {
     throw new HttpError(
       400,
@@ -103,26 +69,46 @@ async function assertValidParent(db: Database, parentSlug: string | undefined, s
 }
 
 async function uniqueSlug(db: Database, title: string, date: string) {
-  const base = `${slugify(title) || "event"}-${date}`;
-  const { results } = await db
-    .prepare("SELECT slug FROM events WHERE slug = ? OR slug LIKE ?")
-    .bind(base, `${base}-%`)
-    .all<{ slug: string }>();
+  const name = slugify(title) || "event";
+  const base = `${name}-${date}`;
+  const [{ results }, series] = await Promise.all([
+    db
+      .prepare("SELECT slug FROM events WHERE slug = ? OR slug LIKE ?")
+      .bind(base, `${base}-%`)
+      .all<{ slug: string }>(),
+    // A repeating event with the same name uses "{name}-{date}" for its dates.
+    db
+      .prepare("SELECT 1 AS found FROM event_series WHERE slug = ?")
+      .bind(name)
+      .first<{ found: number }>(),
+  ]);
   const taken = new Set(results.map((r) => r.slug));
+  if (series) taken.add(base);
   if (!taken.has(base)) return base;
   let n = 2;
   while (taken.has(`${base}-${n}`)) n += 1;
   return `${base}-${n}`;
 }
 
-export async function getEventRow(db: Database, slug: string) {
-  return db.prepare("SELECT * FROM events WHERE slug = ?").bind(slug).first<EventRow>();
-}
+const NOT_FOUND = "This event doesn't exist (anymore).";
 
 async function requireEvent(db: Database, slug: string) {
   const row = await getEventRow(db, slug);
-  if (!row) throw new HttpError(404, "This event doesn't exist (anymore).");
+  if (!row) throw new HttpError(404, NOT_FOUND);
   return row;
+}
+
+/** A stored event, or a generated date of a repeating event. */
+async function findEvent(db: Database, slug: string) {
+  const row = await getEventRow(db, slug);
+  if (row) return toEvent(row);
+  return (await findVirtualOccurrence(db, slug))?.event ?? null;
+}
+
+function assertNoParentForSeriesDate(values: EventFormValues) {
+  if (values.parentSlug) {
+    throw new HttpError(400, "A date of a repeating event can't be part of another event.");
+  }
 }
 
 const TeamInfoPatchSchema = z.object({
@@ -162,6 +148,20 @@ async function loadTeamInfos(db: Database, includePrivate: boolean, slug?: strin
     return info;
   };
   for (const h of hosts.results) get(h.event_slug).hostIds.push(h.user_id);
+  // Generated dates of repeating events get the series' default hosts.
+  const seriesHosts = await db
+    .prepare("SELECT series_id, user_id FROM event_series_hosts ORDER BY rowid")
+    .all<{ series_id: string; user_id: string }>();
+  if (seriesHosts.results.length) {
+    const bySeries = new Map<string, string[]>();
+    for (const h of seriesHosts.results) {
+      bySeries.set(h.series_id, [...(bySeries.get(h.series_id) ?? []), h.user_id]);
+    }
+    for (const e of await listVirtualOccurrences(db)) {
+      const hostIds = e.seriesId && bySeries.get(e.seriesId);
+      if (hostIds && (!slug || e.slug === slug)) get(e.slug).hostIds = [...hostIds];
+    }
+  }
   for (const row of infos.results) {
     const info = get(row.event_slug);
     // Notes and links are internal: only signed-in members get them.
@@ -175,21 +175,18 @@ async function loadTeamInfos(db: Database, includePrivate: boolean, slug?: strin
 }
 
 export const eventRoutes = new Hono<AppEnv>()
-  .get("/events", async (c) => {
-    const { results } = await c.env.DB.prepare(
-      "SELECT * FROM events ORDER BY start_date, start_time IS NULL, start_time, title",
-    ).all<EventRow>();
-    return c.json(results.map(toEvent));
-  })
+  .get("/events", async (c) => c.json(await listAllEvents(c.env.DB)))
 
   // Registered before /events/:slug so "team-info" isn't taken for a slug.
   .get("/events/team-info", async (c) =>
     c.json(await loadTeamInfos(c.env.DB, Boolean(activeUser(c)))),
   )
 
-  .get("/events/:slug", async (c) =>
-    c.json(toEvent(await requireEvent(c.env.DB, c.req.param("slug")))),
-  )
+  .get("/events/:slug", async (c) => {
+    const event = await findEvent(c.env.DB, c.req.param("slug"));
+    if (!event) throw new HttpError(404, NOT_FOUND);
+    return c.json(event);
+  })
 
   .post("/events", async (c) => {
     const user = requireManager(c);
@@ -197,47 +194,58 @@ export const eventRoutes = new Hono<AppEnv>()
     const db = c.env.DB;
     await assertValidParent(db, values.parentSlug);
     const slug = await uniqueSlug(db, values.title, values.startDate);
-    const now = nowIso();
-    await db
-      .prepare(
-        `INSERT INTO events (title, summary, description, category, status, start_date, end_date,
-           start_time, end_time, location, price_info, registration_url, parent_slug,
-           id, slug, tags, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
-      )
-      .bind(...columns(values), newId("e"), slug, user.id, now, now)
-      .run();
+    await insertEvent(db, values, { id: newId("e"), slug, createdBy: user.id }).run();
     return c.json(toEvent(await requireEvent(db, slug)), 201);
   })
 
+  /** For a date of a repeating event, this changes that date only. */
   .put("/events/:slug", async (c) => {
-    requireManager(c);
+    const user = requireManager(c);
     const slug = c.req.param("slug");
     const db = c.env.DB;
-    await requireEvent(db, slug);
+    const row = await getEventRow(db, slug);
+    if (!row) {
+      const found = await findVirtualOccurrence(db, slug);
+      if (!found) throw new HttpError(404, NOT_FOUND);
+      const values = await readBody(c, EventFormSchema);
+      assertNoParentForSeriesDate(values);
+      return c.json(toEvent(await storeOccurrence(db, found.series, found.date, user.id, values)));
+    }
     const values = await readBody(c, EventFormSchema);
+    if (row.series_id) assertNoParentForSeriesDate(values);
     await assertValidParent(db, values.parentSlug, slug);
     await db
       .prepare(
-        `UPDATE events SET title = ?, summary = ?, description = ?, category = ?, status = ?,
-           start_date = ?, end_date = ?, start_time = ?, end_time = ?, location = ?,
-           price_info = ?, registration_url = ?, parent_slug = ?, updated_at = ?
-         WHERE slug = ?`,
+        `UPDATE events SET ${EVENT_COLUMN_UPDATES}, parent_slug = ?, updated_at = ? WHERE slug = ?`,
       )
-      .bind(...columns(values), nowIso(), slug)
+      .bind(...eventColumns(values), orNull(values.parentSlug), nowIso(), slug)
       .run();
     return c.json(toEvent(await requireEvent(db, slug)));
   })
 
   /**
    * Also removes the event's shifts, tasks, hosts, notes and reviews. Its
-   * sub-events stay, as stand-alone events.
+   * sub-events stay, as stand-alone events. For a date of a repeating
+   * event, only that date is removed.
    */
   .delete("/events/:slug", async (c) => {
     requireManager(c);
     const slug = c.req.param("slug");
-    await requireEvent(c.env.DB, slug);
-    await c.env.DB.prepare("DELETE FROM events WHERE slug = ?").bind(slug).run();
+    const db = c.env.DB;
+    const row = await getEventRow(db, slug);
+    if (row?.series_id && row.series_date) {
+      const series = await requireSeries(db, row.series_id);
+      await db.batch([
+        db.prepare("DELETE FROM events WHERE slug = ?").bind(slug),
+        excludeDateStatement(db, series, row.series_date),
+      ]);
+    } else if (row) {
+      await db.prepare("DELETE FROM events WHERE slug = ?").bind(slug).run();
+    } else {
+      const found = await findVirtualOccurrence(db, slug);
+      if (!found) throw new HttpError(404, NOT_FOUND);
+      await excludeDateStatement(db, found.series, found.date).run();
+    }
     return c.body(null, 204);
   })
 
@@ -245,8 +253,9 @@ export const eventRoutes = new Hono<AppEnv>()
     const user = requireManager(c);
     const slug = c.req.param("slug");
     const db = c.env.DB;
-    await requireEvent(db, slug);
     const patch = await readBody(c, TeamInfoPatchSchema);
+    // A generated date of a repeating event is stored first.
+    await ensureEventRow(db, slug, user.id);
     const [current] = await loadTeamInfos(db, true, slug);
     const now = nowIso();
 

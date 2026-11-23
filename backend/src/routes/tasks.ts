@@ -21,7 +21,7 @@ import {
   type ReviewNote,
   type TaskFormValues,
 } from "../shared";
-import { getEventRow } from "./events";
+import { ensureEventRow } from "../series";
 
 interface TaskRow {
   id: string;
@@ -88,11 +88,10 @@ async function requireTask(db: Database, id: string) {
   return task;
 }
 
-async function requireEventSlug(c: AppContext) {
+/** The event's slug; a generated date of a repeating event is stored first. */
+async function requireEventSlug(c: AppContext, userId: string) {
   const slug = c.req.param("slug") ?? "";
-  if (!(await getEventRow(c.env.DB, slug))) {
-    throw new HttpError(404, "This event doesn't exist (anymore).");
-  }
+  await ensureEventRow(c.env.DB, slug, userId);
   return slug;
 }
 
@@ -130,7 +129,7 @@ export const taskRoutes = new Hono<AppEnv>()
 
   .post("/events/:slug/tasks", async (c) => {
     const user = requireManager(c);
-    const slug = await requireEventSlug(c);
+    const slug = await requireEventSlug(c, user.id);
     const values = await readBody(
       c,
       z.preprocess((v) => ({ description: "", ...(v as object) }), TaskFormSchema),
@@ -286,7 +285,7 @@ export const taskRoutes = new Hono<AppEnv>()
 
   .post("/events/:slug/reviews", async (c) => {
     const user = requireUser(c);
-    const slug = await requireEventSlug(c);
+    const slug = await requireEventSlug(c, user.id);
     const { kind, text } = await readBody(c, ReviewNoteFormSchema);
     const id = newId("r");
     await c.env.DB.prepare(

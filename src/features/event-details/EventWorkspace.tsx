@@ -9,7 +9,8 @@ import { EventAdminBar } from "@/features/event-admin/EventAdminBar";
 import { EventHosts } from "@/features/event-team/EventHosts";
 import { EventTeamPanel } from "@/features/event-team/EventTeamPanel";
 import { getParentEvent, getSubEvents } from "@/lib/eventGroups";
-import { useEvents, useResolvedEvent } from "@/services/eventClient";
+import { describeRhythm } from "@/lib/recurrence";
+import { useEvents, useResolvedEvent, useSeries } from "@/services/eventClient";
 import type { EsnEvent } from "@/types/event";
 
 import { EventFacts } from "./EventFacts";
@@ -30,6 +31,7 @@ export function EventWorkspace({
 }) {
   const resolved = useResolvedEvent(slug, serverEvent);
   const { events } = useEvents();
+  const { series } = useSeries();
 
   if (resolved.state === "loading" && !resolved.event) {
     return <Skeleton className="h-72 rounded-3xl" aria-label="Loading event" />;
@@ -40,13 +42,18 @@ export function EventWorkspace({
 
   const event = resolved.event!;
   const parent = getParentEvent(events, event);
+  const ofSeries = event.seriesId ? series.find((s) => s.id === event.seriesId) : undefined;
 
   return (
     <>
       <div className="mb-4 flex justify-end empty:hidden">
         <EventAdminBar event={event} />
       </div>
-      <EventHero event={event} parent={parent} />
+      <EventHero
+        event={event}
+        parent={parent}
+        repeats={ofSeries && describeRhythm(ofSeries.recurrence, ofSeries.startDate)}
+      />
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
         {/* Facts come first on mobile, in the sidebar on desktop. */}
         <EventFacts
@@ -72,7 +79,7 @@ export function EventWorkspace({
             </section>
           )}
           {/* Sub-events can't have their own sub-events. */}
-          {!event.parentSlug && (
+          {!event.parentSlug && !event.seriesId && (
             <SubEventsSection event={event} subEvents={getSubEvents(events, event.slug)} />
           )}
           <EventTeamPanel

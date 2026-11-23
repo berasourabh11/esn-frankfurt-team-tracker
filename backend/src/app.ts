@@ -7,6 +7,7 @@ import { authRoutes } from "./routes/auth";
 import { calendarRoutes } from "./routes/calendar";
 import { eventRoutes } from "./routes/events";
 import { memberRoutes } from "./routes/members";
+import { seriesRoutes } from "./routes/series";
 import { taskRoutes } from "./routes/tasks";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -50,6 +51,7 @@ export function createApp() {
   app.route("/api", authRoutes);
   app.route("/api", memberRoutes);
   app.route("/api", eventRoutes);
+  app.route("/api", seriesRoutes);
   app.route("/api", taskRoutes);
 
   app.get("/", (c) => c.json({ name: "ESN Frankfurt API", ok: true }));

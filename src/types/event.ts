@@ -26,7 +26,7 @@ export const EventStatusSchema = z.enum(EVENT_STATUSES);
 export type EventStatus = z.infer<typeof EventStatusSchema>;
 
 const isoDate = z.iso.date();
-const slugSchema = z
+export const slugSchema = z
   .string()
   .min(1)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be kebab-case");
@@ -43,6 +43,11 @@ export const EsnEventSchema = z
      * "Murder Mystery" night of the CriminaLP weekend). One level only.
      */
     parentSlug: slugSchema.optional(),
+    /**
+     * Set on the dates of a repeating event (e.g. the weekly Language Café):
+     * the id of its series. Each date has its own page, shifts and notes.
+     */
+    seriesId: z.string().min(1).optional(),
     title: z.string().min(1),
     /** One or two sentences shown on cards. */
     summary: z.string().min(1),
@@ -117,3 +122,82 @@ export const EventFormSchema = z
     }
   });
 export type EventFormValues = z.infer<typeof EventFormSchema>;
+
+/** Upper limit of dates a repeating event can produce (5 years of weekly dates). */
+export const MAX_SERIES_OCCURRENCES = 260;
+
+/**
+ * How an event repeats. The weekday / day of the month comes from the first
+ * date, e.g. a weekly series starting on a Wednesday repeats on Wednesdays.
+ */
+export const RecurrenceSchema = z
+  .object({
+    frequency: z.enum(["weekly", "monthly"]),
+    /** Every N weeks / months. */
+    interval: z.number().int().min(1).max(12),
+    /** Monthly only: the same weekday ("first Wednesday") or the same day ("the 15th"). */
+    monthlyBy: z.enum(["weekday", "day"]).optional(),
+    /** Last possible date (inclusive). */
+    until: isoDate.optional(),
+    /** Number of dates. Leave out both `until` and `count` to repeat without an end. */
+    count: z
+      .number({ message: "Enter how many times" })
+      .int("Enter a whole number")
+      .min(2, "At least 2 dates")
+      .max(MAX_SERIES_OCCURRENCES, `At most ${MAX_SERIES_OCCURRENCES} dates`)
+      .optional(),
+  })
+  .refine((r) => !(r.until && r.count), { message: "Pick an end date or a number of dates" });
+export type Recurrence = z.infer<typeof RecurrenceSchema>;
+
+/** A repeating event: one template plus its rule; the dates are generated from it. */
+export const EventSeriesSchema = z.object({
+  id: z.string().min(1),
+  /** Each date's slug is "{slug}-{YYYY-MM-DD}". */
+  slug: slugSchema,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  description: z.string().min(1),
+  category: EventCategorySchema,
+  status: EventStatusSchema.default("scheduled"),
+  /** The first date. */
+  startDate: isoDate,
+  /** End of the first date, for multi-day events (later dates keep the same length). */
+  endDate: isoDate.optional(),
+  startTime: wallClockTime.optional(),
+  endTime: wallClockTime.optional(),
+  location: z.string().min(1).optional(),
+  priceInfo: z.string().min(1).optional(),
+  registrationUrl: z.url().optional(),
+  recurrence: RecurrenceSchema,
+  /** Dates that were removed from the series. */
+  excludedDates: z.array(isoDate).default([]),
+  /** Default hosts of every date. */
+  hostIds: z.array(z.string()).default([]),
+});
+export type EventSeries = z.infer<typeof EventSeriesSchema>;
+
+/** Creating or editing a whole repeating event. */
+export const SeriesFormSchema = z
+  .object({
+    event: EventFormSchema,
+    recurrence: RecurrenceSchema,
+    hostIds: z.array(z.string().min(1)).max(30).default([]),
+  })
+  .superRefine((v, ctx) => {
+    if (v.event.parentSlug) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["event", "parentSlug"],
+        message: "A repeating event can't be part of another event.",
+      });
+    }
+    if (v.recurrence.until && v.recurrence.until < v.event.startDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recurrence", "until"],
+        message: "The last date is before the first one",
+      });
+    }
+  });
+export type SeriesFormValues = z.infer<typeof SeriesFormSchema>;

@@ -10,7 +10,9 @@ import {
   applyEventChanges,
   createHttpEventAdminService,
   createLocalEventAdminService,
+  findLocalSeriesEvent,
   type EventAdminService,
+  type SeriesInput,
 } from "./eventAdminService";
 import { eventKeys } from "./eventKeys";
 import { createHttpEventService } from "./eventService";
@@ -118,13 +120,33 @@ export function useResolvedEvent(slug: string, serverEvent: EsnEvent | null): Re
   }
   if (local.deleted.includes(slug)) return { state: "removed", event: null };
   const event =
-    local.updated[slug] ?? local.created.find((e) => e.slug === slug) ?? serverEvent ?? null;
+    local.updated[slug] ??
+    local.created.find((e) => e.slug === slug) ??
+    serverEvent ??
+    findLocalSeriesEvent(local, slug);
   return event ? { state: "ready", event } : { state: "missing", event: null };
+}
+
+/** Repeating events (their rules); the dates themselves come with `useEvents`. */
+export function useSeries() {
+  const query = useQuery({
+    queryKey: [...eventKeys.all, "series"],
+    queryFn: () => getEventAdminService().listSeries(),
+    enabled: typeof window !== "undefined",
+    staleTime: 5 * 60 * 1000,
+  });
+  return { series: query.data ?? [], isLoading: query.isPending };
 }
 
 export function useEventAdminMutations() {
   const queryClient = useQueryClient();
   const onSuccess = () => queryClient.invalidateQueries({ queryKey: eventKeys.all });
+  // Series carry default hosts, which show up in the team info of each date.
+  const onSeriesSuccess = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: eventKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ["team"] }),
+    ]);
   const svc = () => getEventAdminService();
 
   return {
@@ -141,6 +163,19 @@ export function useEventAdminMutations() {
     deleteEvent: useMutation({
       mutationFn: (slug: string) => svc().deleteEvent(slug),
       onSuccess,
+    }),
+    createSeries: useMutation({
+      mutationFn: (v: { input: SeriesInput; existingSlugs: readonly string[] }) =>
+        svc().createSeries(v.input, v.existingSlugs),
+      onSuccess: onSeriesSuccess,
+    }),
+    updateSeries: useMutation({
+      mutationFn: (v: { id: string; input: SeriesInput }) => svc().updateSeries(v.id, v.input),
+      onSuccess: onSeriesSuccess,
+    }),
+    deleteSeries: useMutation({
+      mutationFn: (id: string) => svc().deleteSeries(id),
+      onSuccess: onSeriesSuccess,
     }),
   };
 }

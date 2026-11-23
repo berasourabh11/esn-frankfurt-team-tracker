@@ -32,7 +32,7 @@ export function countSubEvents(events: readonly EsnEvent[]): Map<string, number>
 
 /**
  * Events that `current` (or a new event, when undefined) may be placed under:
- * stand-alone or main events other than itself. An event that already has
+ * stand-alone or main events other than itself (not dates of repeating events). An event that already has
  * sub-events can't become a sub-event.
  */
 export function getParentCandidates(
@@ -40,7 +40,8 @@ export function getParentCandidates(
   current?: Pick<EsnEvent, "slug">,
 ): EsnEvent[] {
   if (current && events.some((e) => e.parentSlug === current.slug)) return [];
-  return events.filter((e) => !e.parentSlug && e.slug !== current?.slug);
+  // Dates of repeating events can't have sub-events.
+  return events.filter((e) => !e.parentSlug && !e.seriesId && e.slug !== current?.slug);
 }
 
 /** Drops links to main events that no longer exist (e.g. after removing one). */
